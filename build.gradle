@@ -1,0 +1,74 @@
+plugins {
+    id 'java'
+    id 'application'
+}
+
+mainClassName = 'pyokagan.cs4212.Main'
+
+sourceCompatibility = JavaVersion.VERSION_1_8
+targetCompatibility = JavaVersion.VERSION_1_8
+
+repositories {
+    mavenCentral()
+    flatDir {
+        dirs 'libs'
+    }
+}
+
+wrapper {
+    gradleVersion = '4.10.2'
+}
+
+def generatedSources = "$buildDir/generated-sources"
+
+sourceSets {
+    main {
+        java.srcDirs += generatedSources
+    }
+}
+
+dependencies {
+    implementation name: 'java-cup-11b-runtime'
+    implementation 'com.fifesoft:rsyntaxtextarea:2.6.1'
+    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.1.0'
+    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.1.0'
+}
+
+task jflex(type:JavaExec) {
+    def inputFile = 'src/main/grammar/minijava.flex'
+    inputs.file inputFile
+    outputs.file "$generatedSources/pyokagan/cs4212/Lexer.java"
+    main = '-jar'
+    args = [
+        'libs/jflex-1.6.1.jar',
+        '-d',
+        "$generatedSources/pyokagan/cs4212",
+        inputFile,
+    ]
+
+    doFirst { mkdir "$generatedSources/pyokagan/cs4212" }
+}
+
+task cup(type:JavaExec) {
+    def inputFile = 'src/main/grammar/minijava.cup'
+    inputs.file inputFile
+    outputs.file "$generatedSources/pyokagan/cs4212/Parser.java"
+    outputs.file "$generatedSources/pyokagan/cs4212/sym.java"
+    main = '-jar'
+    args = [
+        'libs/java-cup-11b.jar',
+        '-destdir', "$generatedSources/pyokagan/cs4212",
+        '-interface',
+        '-parser', 'Parser',
+        inputFile,
+    ]
+
+    doFirst { mkdir "$generatedSources/pyokagan/cs4212" }
+}
+
+compileJava.dependsOn jflex
+compileJava.dependsOn cup
+
+test {
+    useJUnitPlatform()
+}

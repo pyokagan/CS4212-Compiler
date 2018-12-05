@@ -1,0 +1,373 @@
+/* Minijava Grammar */
+package pyokagan.cs4212;
+
+import java_cup.runtime.ComplexSymbolFactory;
+import java_cup.runtime.ScannerBuffer;
+import java_cup.runtime.Symbol;
+
+import java.io.*;
+import java.util.*;
+
+parser code {:
+
+    private StringBuilder errors;
+
+  public Parser(java_cup.runtime.Scanner lex, ComplexSymbolFactory sf, StringBuilder errors) {
+    super(lex,sf);
+    this.errors = errors;
+  }
+
+    public static Ast.Prog parse(Reader reader) throws Exception {
+        MySymbolFactory csf = new MySymbolFactory();
+        StringBuilder errors = new StringBuilder();
+        ScannerBuffer lexer = new ScannerBuffer(new Lexer(reader, csf));
+        Parser p = new Parser(lexer, csf, errors);
+        try {
+            return (Ast.Prog) p.parse().value;
+        } catch (LexException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new Exception(p.errors.toString(), e);
+        }
+    }
+
+    public static void main(String[] args) throws Exception {
+        Ast.Prog e = parse(new BufferedReader(new FileReader(args[0])));
+        System.out.println(e.render(0, 0));
+    }
+
+    @Override
+    public void report_error(String message, Object info) {
+        if (info instanceof ComplexSymbolFactory.ComplexSymbol) {
+            ComplexSymbolFactory.ComplexSymbol cs = (ComplexSymbolFactory.ComplexSymbol) info;
+            errors.append(message).append(" for input symbol \"").append(cs.getName()).append("\" spanning from ")
+                .append(cs.getLeft()).append(" to ").append(cs.getRight()).append('\n');
+            return;
+        }
+
+        errors.append(message);
+        if (info instanceof Symbol) {
+            if (((Symbol) info).left != 1)
+                errors.append(" at character ").append(((Symbol) info).left).append(" of input\n");
+            else
+                errors.append('\n');
+        } else {
+            errors.append('\n');
+        }
+    }
+
+    @Override
+    protected void report_expected_token_ids(){
+        List<Integer> ids = expected_token_ids();
+        LinkedList<String> list = new LinkedList<String>();
+        for (Integer expected : ids){
+            list.add(symbl_name_from_id(expected));
+        }
+        errors.append("instead expected token clases are ").append(list).append('\n');
+  }
+
+:};
+
+// terminals
+terminal IF, ELSE, CLASS, WHILE, READLN, PRINTLN, RETURN, THIS, NEW, MAIN, VOID, INT, BOOL, STRING;
+
+terminal Integer INTEGER_LITERAL;
+terminal String STRING_LITERAL;
+terminal String IDENT;
+terminal String CNAME;
+terminal TRUE, FALSE;
+terminal NULL;
+terminal PLUS, MINUS, TIMES, DIV, LT, GT, LEQ, GEQ, EQ, NEQ, NOT, OROR, ANDAND, ASSIGN;
+terminal LPAREN, RPAREN, LBRACE, RBRACE, SEMICOLON, DOT;
+terminal COMMA;
+
+// non-terminals
+non terminal Ast.Prog program;
+non terminal Ast.Expr exp, bexp, aexp, conj, rexp, bgrd, term, ftr, atom;
+non terminal Ast.BinaryOp bop;
+non terminal List<Ast.Expr> explist, explist_opt;
+non terminal Ast.Stmt stmt;
+non terminal List<Ast.Stmt> stmtlist, stmtlist_opt;
+non terminal Ast.Typ typ;
+non terminal Ast.VarDecl vardecl;
+non terminal List<Ast.VarDecl> vardecllist, vardecllist_opt;
+non terminal Ast.VarDecl argdecl;
+non terminal List<Ast.VarDecl> argdecllist, argdecllist_opt;
+non terminal Ast.Meth mddecl;
+non terminal List<Ast.Meth> mddecllist, mddecllist_opt;
+non terminal Ast.Clazz classdecl, mainclass;
+non terminal List<Ast.Clazz> classdecllist, classdecllist_opt;
+
+program ::=
+    mainclass:c1 classdecllist_opt:lst
+        {: lst.add(0, c1); RESULT = new Ast.Prog(lst); :}
+    ;
+
+mainclass ::=
+    CLASS CNAME:c LBRACE VOID MAIN LPAREN argdecllist_opt:arglst RPAREN LBRACE vardecllist_opt:varlst stmtlist:stmtlst RBRACE RBRACE
+    {: Ast.Meth meth = new Ast.Meth(new Ast.VoidTyp(), "main", arglst, varlst, stmtlst);
+        ArrayList<Ast.Meth> meths = new ArrayList<>();
+        meths.add(meth);
+        RESULT = new Ast.Clazz(c, Collections.emptyList(), meths);
+    :}
+    ;
+
+classdecl ::=
+    CLASS CNAME:c LBRACE vardecllist:varlst mddecllist_opt:mdlst RBRACE
+    {: RESULT = new Ast.Clazz(c, varlst, mdlst); :}
+    | CLASS CNAME:c LBRACE mddecllist:mdlst RBRACE
+    {: RESULT = new Ast.Clazz(c, new ArrayList<>(), mdlst); :}
+    | CLASS CNAME:c LBRACE RBRACE
+    {: RESULT = new Ast.Clazz(c, new ArrayList<>(), new ArrayList<>()); :}
+    ;
+
+classdecllist_opt ::=
+    classdecllist:lst
+        {: RESULT = lst; :}
+    | {: RESULT = new ArrayList<Ast.Clazz>(); :}
+    ;
+
+classdecllist ::=
+    classdecl:c
+        {: ArrayList<Ast.Clazz> arr = new ArrayList<>(); arr.add(c); RESULT = arr; :}
+    | classdecllist:arr classdecl:c
+        {: arr.add(c); RESULT = arr; :}
+        ;
+
+mddecl ::=
+    typ:t IDENT:i LPAREN argdecllist_opt:arglst RPAREN LBRACE vardecllist_opt:varlst stmtlist:stmtlst RBRACE
+    {: RESULT = new Ast.Meth(t, i, arglst, varlst, stmtlst); :}
+    ;
+
+mddecllist_opt ::=
+    mddecllist:lst
+    {: RESULT = lst; :}
+    | {: RESULT = new ArrayList<Ast.Meth>(); :}
+    ;
+
+mddecllist ::=
+    mddecl:v
+    {: ArrayList<Ast.Meth> arr = new ArrayList<>(); arr.add(v); RESULT = arr; :}
+    | mddecllist:arr mddecl:v
+    {: arr.add(v); RESULT = arr; :}
+    ;
+
+vardecl ::=
+    typ:t IDENT:i SEMICOLON
+    {: RESULT = new Ast.VarDecl(t, i); :}
+    ;
+
+vardecllist_opt ::=
+    vardecllist:lst
+    {: RESULT = lst; :}
+    | {: RESULT = new ArrayList<Ast.VarDecl>(); :}
+    ;
+
+vardecllist ::=
+    vardecl:v
+    {: ArrayList<Ast.VarDecl> arr = new ArrayList<>(); arr.add(v); RESULT = arr; :}
+    | vardecllist:arr vardecl:v
+    {: arr.add(v); RESULT = arr; :}
+    ;
+
+argdecl ::=
+    typ:t IDENT:i
+        {: RESULT = new Ast.VarDecl(t, i); :}
+    ;
+
+argdecllist_opt ::=
+    argdecllist:lst
+    {: RESULT = lst; :}
+    | {: RESULT = new ArrayList<Ast.VarDecl>(); :}
+    ;
+
+argdecllist ::=
+    argdecl:v
+    {: ArrayList<Ast.VarDecl> arr = new ArrayList<>(); arr.add(v); RESULT = arr; :}
+    | argdecllist:arr COMMA argdecl:v
+    {: arr.add(v); RESULT = arr; :}
+    ;
+
+typ ::=
+    INT
+    {: RESULT = new Ast.IntTyp(); :}
+    | BOOL
+    {: RESULT = new Ast.BoolTyp(); :}
+    | STRING
+    {: RESULT = new Ast.StringTyp(); :}
+    | VOID
+    {: RESULT = new Ast.VoidTyp(); :}
+    | CNAME:c
+    {: RESULT = new Ast.ClazzTyp(c); :}
+    ;
+
+stmt ::=
+    IF LPAREN exp:e RPAREN LBRACE stmtlist:lst1 RBRACE ELSE LBRACE stmtlist:lst2 RBRACE
+        {: RESULT = new Ast.IfStmt(e, lst1, lst2); :}
+    | WHILE LPAREN exp:e RPAREN LBRACE stmtlist_opt:lst RBRACE
+        {: RESULT = new Ast.WhileStmt(e, lst); :}
+    | READLN LPAREN IDENT:i RPAREN SEMICOLON
+        {: RESULT = new Ast.ReadlnStmt(i); :}
+    | PRINTLN LPAREN exp:e RPAREN SEMICOLON
+        {: RESULT = new Ast.PrintlnStmt(e); :}
+    | IDENT:i ASSIGN exp:e SEMICOLON
+        {: RESULT = new Ast.VarAssignStmt(i, e); :}
+    | atom:e1 DOT IDENT:i ASSIGN exp:e2 SEMICOLON
+        {: RESULT = new Ast.FieldAssignStmt(e1, i, e2); :}
+    | atom:e1 LPAREN explist_opt:lst RPAREN SEMICOLON
+        {: RESULT = new Ast.CallStmt(e1, lst); :}
+    | RETURN exp:e SEMICOLON
+        {: RESULT = new Ast.ReturnStmt(e); :}
+    | RETURN SEMICOLON
+        {: RESULT = new Ast.ReturnStmt(null); :}
+    ;
+
+stmtlist_opt ::=
+    stmtlist:lst
+        {: RESULT = lst; :}
+    | {: RESULT = new ArrayList<Ast.Stmt>(); :}
+    ;
+
+stmtlist ::=
+    stmt:s
+        {: ArrayList<Ast.Stmt> arr = new ArrayList<>(); arr.add(s); RESULT = arr; :}
+    | stmtlist:arr stmt:s
+        {: arr.add(s); RESULT = arr; :}
+    ;
+
+exp ::=
+/* Unknown type */
+      atom:e
+        {: RESULT = e; :}
+/* Boolean type */
+    /* bexp */
+    | bexp:e1 OROR conj:e2
+        {: RESULT = new Ast.BinaryExpr(Ast.BinaryOp.LOR, e1, e2); :}
+    /* conj */
+    | conj:e1 ANDAND rexp:e2
+        {: RESULT = new Ast.BinaryExpr(Ast.BinaryOp.LAND, e1, e2); :}
+    /* rexp */
+    | aexp:e1 bop:op aexp:e2
+        {: RESULT = new Ast.BinaryExpr(op, e1, e2); :}
+    /* bgrd */
+    | NOT bgrd:e
+        {: RESULT = new Ast.UnaryExpr(Ast.UnaryOp.LNOT, e); :}
+    | TRUE
+        {: RESULT = new Ast.BoolLitExpr(true); :}
+    | FALSE
+        {: RESULT = new Ast.BoolLitExpr(false); :}
+/* Integer type */
+    /* aexp */
+    | aexp:e1 PLUS term:e2
+        {: RESULT = new Ast.BinaryExpr(Ast.BinaryOp.PLUS, e1, e2); :}
+    | aexp:e1 MINUS term:e2
+        {: RESULT = new Ast.BinaryExpr(Ast.BinaryOp.MINUS, e1, e2); :}
+    /* term */
+    | term:e1 TIMES ftr:e2
+        {: RESULT = new Ast.BinaryExpr(Ast.BinaryOp.MUL, e1, e2); :}
+    | term:e1 DIV ftr:e2
+        {: RESULT = new Ast.BinaryExpr(Ast.BinaryOp.DIV, e1, e2); :}
+    /* ftr */
+    | INTEGER_LITERAL:i
+        {: RESULT = new Ast.IntLitExpr(i); :}
+    | MINUS ftr:e
+        {: RESULT = new Ast.UnaryExpr(Ast.UnaryOp.NEG, e); :}
+/* String type */
+    | STRING_LITERAL:s
+        {: RESULT = new Ast.StringLitExpr(s); :}
+    ;
+
+bexp ::=
+      bexp:e1 OROR conj:e2
+        {: RESULT = new Ast.BinaryExpr(Ast.BinaryOp.LOR, e1, e2); :}
+    | conj:e
+        {: RESULT = e; :}
+    ;
+
+conj ::=
+      conj:e1 ANDAND rexp:e2
+        {: RESULT = new Ast.BinaryExpr(Ast.BinaryOp.LAND, e1, e2); :}
+    | rexp:e
+        {: RESULT = e; :}
+    ;
+
+rexp ::=
+      aexp:e1 bop:op aexp:e2
+        {: RESULT = new Ast.BinaryExpr(op, e1, e2); :}
+    | bgrd:e
+        {: RESULT = e; :}
+    ;
+
+bop ::=
+      LT {: RESULT = Ast.BinaryOp.LT; :}
+    | GT {: RESULT = Ast.BinaryOp.GT; :}
+    | LEQ {: RESULT = Ast.BinaryOp.LE; :}
+    | GEQ {: RESULT = Ast.BinaryOp.GE; :}
+    | EQ {: RESULT = Ast.BinaryOp.EQ; :}
+    | NEQ {: RESULT = Ast.BinaryOp.NE; :}
+    ;
+
+bgrd ::=
+      NOT bgrd:e
+        {: RESULT = new Ast.UnaryExpr(Ast.UnaryOp.LNOT, e); :}
+    | TRUE
+        {: RESULT = new Ast.BoolLitExpr(true); :}
+    | FALSE
+        {: RESULT = new Ast.BoolLitExpr(false); :}
+    | atom:e
+        {: RESULT = e; :}
+    ;
+
+aexp ::=
+      aexp:e1 PLUS term:e2
+        {: RESULT = new Ast.BinaryExpr(Ast.BinaryOp.PLUS, e1, e2); :}
+    | aexp:e1 MINUS term:e2
+        {: RESULT = new Ast.BinaryExpr(Ast.BinaryOp.MINUS, e1, e2); :}
+    | term:e
+        {: RESULT = e; :}
+    ;
+
+term ::=
+      term:e1 TIMES ftr:e2
+        {: RESULT = new Ast.BinaryExpr(Ast.BinaryOp.MUL, e1, e2); :}
+    | term:e1 DIV ftr:e2
+        {: RESULT = new Ast.BinaryExpr(Ast.BinaryOp.DIV, e1, e2); :}
+    | ftr:e
+        {: RESULT = e; :}
+    ;
+
+ftr ::=
+      INTEGER_LITERAL:i
+        {: RESULT = new Ast.IntLitExpr(i); :}
+    | MINUS ftr:e
+        {: RESULT = new Ast.UnaryExpr(Ast.UnaryOp.NEG, e); :}
+    | atom:e
+        {: RESULT = e; :}
+    ;
+
+atom ::=
+      atom:e DOT IDENT:ide
+        {: RESULT = new Ast.DotExpr(e, ide); :}
+    | atom:e LPAREN explist_opt:lst RPAREN
+        {: RESULT = new Ast.CallExpr(e, lst); :}
+    | THIS
+        {: RESULT = new Ast.ThisExpr(); :}
+    | IDENT:ide
+        {: RESULT = new Ast.IdentExpr(ide); :}
+    | NEW CNAME:c LPAREN RPAREN
+        {: RESULT = new Ast.NewExpr(c); :}
+    | LPAREN exp:e RPAREN
+        {: RESULT = e; :}
+    | NULL
+        {: RESULT = new Ast.NullLitExpr(); :}
+    ;
+
+explist_opt ::=
+      explist:lst {: RESULT = lst; :}
+    | {: RESULT = new ArrayList<Ast.Expr>(); :}
+    ;
+
+explist ::=
+    exp:e {: ArrayList<Ast.Expr> arr = new ArrayList<>(); arr.add(e); RESULT = arr; :}
+    | explist:arr COMMA exp:e {: arr.add(e); RESULT = arr; :}
+    ;
